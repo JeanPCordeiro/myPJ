@@ -1,0 +1,318 @@
+# ADR-0012: Stratégie de Tests en Pyramide
+
+## Statut
+
+Accepté
+
+## Contexte
+
+Le système DPJ nécessite une stratégie de tests complète pour :
+- Garantir la qualité du code et des fonctionnalités
+- Détecter les régressions rapidement
+- Faciliter les refactorings et évolutions
+- Assurer la fiabilité en production
+- Respecter les exigences de sécurité bancaire
+- Maintenir une couverture de code >80%
+
+Contraintes :
+- Architecture microservices distribuée
+- Intégrations multiples (GED, bases de données)
+- Interfaces utilisateur complexes
+- Exigences de performance strictes
+- Déploiements fréquents avec CI/CD
+
+## Options Considérées
+
+### Option 1: Tests manuels uniquement
+- **Avantages** : Simplicité, pas d'investissement initial
+- **Inconvénients** : Lenteur, erreurs humaines, pas de régression
+
+### Option 2: Tests E2E principalement
+- **Avantages** : Couverture complète des scénarios
+- **Inconvénients** : Lents, fragiles, coûteux à maintenir
+
+### Option 3: Tests unitaires uniquement
+- **Avantages** : Rapides, fiables, bon feedback
+- **Inconvénients** : Pas de test d'intégration, faux sentiment de sécurité
+
+### Option 4: Pyramide de tests équilibrée
+- **Avantages** : Équilibre coût/bénéfice, feedback rapide, couverture complète
+- **Inconvénients** : Complexité de mise en place, expertise requise
+
+## Décision
+
+Nous adoptons une **stratégie de pyramide de tests** avec la répartition suivante :
+
+### Pyramide de Tests
+```
+        /\
+       /  \
+      / E2E \ (10% - Tests End-to-End)
+     /______\
+    /        \
+   /Integration\ (20% - Tests d'Intégration)
+  /__________\
+ /            \
+/  Unit Tests  \ (70% - Tests Unitaires)
+/______________\
+```
+
+### Tests Unitaires (70%)
+- **Cible** : Logique métier, services, utilitaires
+- **Framework** : JUnit 5 + Mockito pour Java, Jest pour React
+- **Couverture** : >90% pour la logique métier
+- **Exécution** : <5 minutes pour toute la suite
+
+#### Exemple Java
+```java
+@ExtendWith(MockitoExtension.class)
+class DocumentServiceTest {
+    
+    @Mock
+    private DocumentRepository documentRepository;
+    
+    @Mock
+    private EventPublisher eventPublisher;
+    
+    @InjectMocks
+    private DocumentService documentService;
+    
+    @Test
+    @DisplayName("Doit créer un document avec succès")
+    void shouldCreateDocumentSuccessfully() {
+        // Given
+        CreerDocumentCommand command = new CreerDocumentCommand(
+            "CV.pdf", "CV", "content".getBytes(), "client123"
+        );
+        
+        // When
+        DocumentId result = documentService.creerDocument(command);
+        
+        // Then
+        assertThat(result).isNotNull();
+        verify(documentRepository).save(any(Document.class));
+        verify(eventPublisher).publish(any(DocumentCreeEvent.class));
+    }
+}
+```
+
+#### Exemple React
+```typescript
+// DocumentUpload.test.tsx
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { DocumentUpload } from './DocumentUpload';
+
+describe('DocumentUpload', () => {
+  it('should upload document successfully', async () => {
+    // Given
+    const mockOnUpload = jest.fn();
+    const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });
+    
+    render(<DocumentUpload onUpload={mockOnUpload} />);
+    
+    // When
+    const input = screen.getByLabelText(/upload/i);
+    fireEvent.change(input, { target: { files: [file] } });
+    
+    // Then
+    await waitFor(() => {
+      expect(mockOnUpload).toHaveBeenCalledWith(file);
+    });
+  });
+});
+```
+
+### Tests d'Intégration (20%)
+- **Cible** : Intégrations bases de données, APIs, services externes
+- **Framework** : TestContainers, WireMock, Spring Boot Test
+- **Couverture** : Tous les points d'intégration critiques
+- **Exécution** : <15 minutes
+
+#### Tests de Repository
+```java
+@DataJpaTest
+@Testcontainers
+class DocumentRepositoryIntegrationTest {
+    
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+            .withDatabaseName("dpj_test")
+            .withUsername("test")
+            .withPassword("test");
+    
+    @Autowired
+    private TestEntityManager entityManager;
+    
+    @Autowired
+    private DocumentRepository documentRepository;
+    
+    @Test
+    void shouldFindDocumentsByClientId() {
+        // Given
+        Document document = new Document("CV.pdf", TypeDocument.CV, "client123");
+        entityManager.persistAndFlush(document);
+        
+        // When
+        List<Document> results = documentRepository.findByClientId("client123");
+        
+        // Then
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getNom()).isEqualTo("CV.pdf");
+    }
+}
+```
+
+#### Tests d'API
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers
+class DocumentControllerIntegrationTest {
+    
+    @Autowired
+    private TestRestTemplate restTemplate;
+    
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15");
+    
+    @Test
+    void shouldCreateDocumentViaAPI() {
+        // Given
+        DocumentRequest request = new DocumentRequest("CV.pdf", "CV", "content");
+        
+        // When
+        ResponseEntity<DocumentResponse> response = restTemplate.postForEntity(
+            "/api/documents", request, DocumentResponse.class
+        );
+        
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().getId()).isNotNull();
+    }
+}
+```
+
+### Tests End-to-End (10%)
+- **Cible** : Parcours utilisateur complets
+- **Framework** : Cypress pour web, Playwright pour cross-browser
+- **Couverture** : Scénarios métier critiques
+- **Exécution** : <30 minutes
+
+#### Exemple Cypress
+```typescript
+// document-upload.e2e.ts
+describe('Document Upload Flow', () => {
+  beforeEach(() => {
+    cy.login('client@test.com', 'password');
+    cy.visit('/documents');
+  });
+
+  it('should complete document upload flow', () => {
+    // Upload document
+    cy.get('[data-testid=file-input]')
+      .selectFile('cypress/fixtures/cv.pdf');
+    
+    cy.get('[data-testid=document-type]')
+      .select('CV');
+    
+    cy.get('[data-testid=upload-button]')
+      .click();
+    
+    // Verify upload success
+    cy.get('[data-testid=success-message]')
+      .should('contain', 'Document uploadé avec succès');
+    
+    // Verify document appears in list
+    cy.get('[data-testid=document-list]')
+      .should('contain', 'cv.pdf');
+    
+    // Verify status
+    cy.get('[data-testid=document-status]')
+      .should('contain', 'En attente de validation');
+  });
+});
+```
+
+### Tests de Performance
+- **Framework** : JMeter, K6, Artillery
+- **Cible** : APIs critiques, charge utilisateur
+- **Seuils** : <2s pour 95% des requêtes, 500+ utilisateurs simultanés
+
+#### Exemple K6
+```javascript
+// load-test.js
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export let options = {
+  stages: [
+    { duration: '2m', target: 100 },
+    { duration: '5m', target: 500 },
+    { duration: '2m', target: 0 },
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<2000'],
+    http_req_failed: ['rate<0.05'],
+  },
+};
+
+export default function() {
+  let response = http.post('http://api.dpj.local/documents', {
+    nom: 'test.pdf',
+    type: 'CV',
+    contenu: 'base64content'
+  });
+  
+  check(response, {
+    'status is 201': (r) => r.status === 201,
+    'response time < 2s': (r) => r.timings.duration < 2000,
+  });
+  
+  sleep(1);
+}
+```
+
+## Conséquences
+
+### Positives
+- **Feedback Rapide** : Tests unitaires exécutés à chaque commit
+- **Confiance** : Couverture complète des scénarios critiques
+- **Maintenabilité** : Tests rapides et fiables
+- **Régression** : Détection automatique des régressions
+- **Documentation** : Tests comme documentation vivante
+
+### Négatives
+- **Investissement Initial** : Temps de mise en place important
+- **Maintenance** : Tests à maintenir avec le code
+- **Complexité** : Gestion de multiples types de tests
+
+### Risques
+- Tests fragiles et instables
+- Faux sentiment de sécurité
+- Temps d'exécution trop long
+
+### Mitigations
+- **Stabilité** : Tests déterministes et isolés
+- **Parallélisation** : Exécution parallèle des tests
+- **Monitoring** : Surveillance des temps d'exécution
+- **Formation** : Formation équipe aux bonnes pratiques
+- **Review** : Code review incluant les tests
+
+## Métriques et Objectifs
+
+### Couverture de Code
+- **Unitaires** : >90% pour la logique métier
+- **Intégration** : 100% des points d'intégration
+- **E2E** : 100% des parcours critiques
+
+### Performance des Tests
+- **Unitaires** : <5 minutes pour toute la suite
+- **Intégration** : <15 minutes
+- **E2E** : <30 minutes
+- **Performance** : Exécution hebdomadaire
+
+### Qualité
+- **Flakiness** : <1% de tests instables
+- **Maintenance** : <10% du temps de développement
+- **Feedback** : Résultats disponibles en <20 minutes
+
+Cette stratégie garantit une qualité élevée tout en maintenant une vélocité de développement optimale.

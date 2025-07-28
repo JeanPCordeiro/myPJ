@@ -54,6 +54,27 @@ Le système DPJ est une plateforme omnicanale moderne permettant la centralisati
 | [`11-patterns-bonnes-pratiques.md`](11-patterns-bonnes-pratiques.md) | Patterns DDD, CQRS, Circuit Breaker et bonnes pratiques de développement | ✅ Complet |
 | [`12-strategie-tests-monitoring.md`](12-strategie-tests-monitoring.md) | Stratégie complète de tests et monitoring avec Prometheus/Grafana | ✅ Complet |
 
+## 🏛️ Architecture Decision Records (ADR)
+
+Toutes les décisions architecturales importantes sont documentées sous forme d'ADR au format MADR :
+
+| ADR | Décision | Domaine | Statut |
+|-----|----------|---------|--------|
+| [ADR-0001](adr/0001-architecture-microservices.md) | Architecture Microservices | Architecture | ✅ Accepté |
+| [ADR-0002](adr/0002-stack-technologique-java-spring.md) | Stack Java/Spring Boot | Technologie | ✅ Accepté |
+| [ADR-0003](adr/0003-architecture-donnees-polyglotte.md) | Architecture Données Polyglotte | Données | ✅ Accepté |
+| [ADR-0004](adr/0004-authentification-jwt-rbac.md) | Authentification JWT + RBAC | Sécurité | ✅ Accepté |
+| [ADR-0005](adr/0005-stockage-documents-minio.md) | Stockage Documents MinIO | Stockage | ✅ Accepté |
+| [ADR-0006](adr/0006-frontend-react-typescript.md) | Frontend React + TypeScript | Frontend | ✅ Accepté |
+| [ADR-0007](adr/0007-infrastructure-kubernetes-aws.md) | Infrastructure Kubernetes/AWS | Infrastructure | ✅ Accepté |
+| [ADR-0008](adr/0008-integration-ged-pattern-adapter.md) | Intégration GED Pattern Adapter | Intégration | ✅ Accepté |
+| [ADR-0009](adr/0009-messaging-apache-kafka.md) | Messaging Apache Kafka | Messaging | ✅ Accepté |
+| [ADR-0010](adr/0010-monitoring-prometheus-grafana.md) | Monitoring Prometheus/Grafana | Observabilité | ✅ Accepté |
+| [ADR-0011](adr/0011-patterns-ddd-cqrs.md) | Patterns DDD + CQRS | Architecture | ✅ Accepté |
+| [ADR-0012](adr/0012-strategie-tests-pyramide.md) | Stratégie Tests Pyramide | Qualité | ✅ Accepté |
+
+📖 **[Voir tous les ADR](adr/README.md)** - Documentation complète des décisions architecturales
+
 ## 🏗️ Architecture Technique
 
 ### Stack Technologique
@@ -212,6 +233,32 @@ kubectl get pods -n dpj
 - [ ] Monitoring avancé
 - [ ] Fonctionnalités IA/ML
 
+## 📁 Structure du Repository
+
+```
+dpj-architecture/
+├── README.md                                    # Ce fichier
+├── INDEX.md                                     # Index de navigation
+├── git-commands.md                              # Guide Git
+├── adr/                                         # Architecture Decision Records
+│   ├── README.md                               # Index des ADR
+│   ├── 0001-architecture-microservices.md     # ADR Architecture
+│   ├── 0002-stack-technologique-java-spring.md # ADR Stack technique
+│   └── ...                                    # Autres ADR
+├── 01-analyse-exigences-fonctionnelles.md      # Exigences et cas d'usage
+├── 02-architecture-technique-globale.md        # Architecture microservices
+├── 03-architecture-donnees-modeles.md          # Modèles de données
+├── 04-api-rest-contrats-service.md             # APIs REST OpenAPI
+├── 05-architecture-securite-authentification.md # Sécurité JWT/RBAC
+├── 06-architecture-stockage-documents.md       # Stockage MinIO
+├── 07-integration-ged-existante.md             # Intégration GED
+├── 08-architecture-interfaces-utilisateur.md   # Interfaces React
+├── 09-strategie-deploiement-infrastructure.md  # Kubernetes/AWS
+├── 10-diagrammes-architecture.md               # Diagrammes Mermaid
+├── 11-patterns-bonnes-pratiques.md             # Patterns DDD/CQRS
+└── 12-strategie-tests-monitoring.md            # Tests et monitoring
+```
+
 ## 👥 Équipe et Contacts
 
 - **Architecte Technique** : Responsable de la conception globale
@@ -228,4 +275,4 @@ Ce projet est la propriété de [Nom de la Banque] et est confidentiel.
 
 **Dernière mise à jour** : 28 janvier 2025  
 **Version de l'architecture** : 1.0  
-**Statut** : Architecture complète - Prêt pour implémentation
+**Statut** : Architecture complète avec ADR - Prêt pour implémentation

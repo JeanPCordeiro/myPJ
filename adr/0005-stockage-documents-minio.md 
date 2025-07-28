@@ -1,0 +1,107 @@
+# ADR-0005: Stockage de Documents avec MinIO
+
+## Statut
+
+Accepté
+
+## Contexte
+
+Le système DPJ doit gérer le stockage de documents avec les exigences suivantes :
+- Documents jusqu'à 50MB par fichier
+- Support de 500+ utilisateurs simultanés
+- Haute disponibilité et réplication
+- Compatibilité avec les standards cloud (S3)
+- Sécurité et chiffrement des données
+- Coûts maîtrisés par rapport aux solutions cloud
+
+## Options Considérées
+
+### Option 1: Système de fichiers local
+- **Avantages** : Simplicité, performance locale
+- **Inconvénients** : Pas de réplication, pas de scalabilité
+
+### Option 2: Amazon S3
+- **Avantages** : Fiabilité, scalabilité illimitée
+- **Inconvénients** : Coûts élevés, dépendance externe, latence
+
+### Option 3: MinIO (S3-compatible)
+- **Avantages** : Compatible S3, contrôle total, coûts réduits
+- **Inconvénients** : Gestion infrastructure interne
+
+### Option 4: Base de données (BLOB)
+- **Avantages** : Intégration simple
+- **Inconvénients** : Performance dégradée, taille base de données
+
+## Décision
+
+Nous adoptons **MinIO** comme solution de stockage d'objets :
+
+### Architecture MinIO
+- **Déploiement** : Cluster MinIO en mode distribué
+- **Réplication** : 4 nœuds minimum avec réplication 2+2
+- **Buckets** : Organisation par type de document
+- **Chiffrement** : AES-256 côté serveur (SSE-S3)
+- **Accès** : API S3-compatible avec SDK Java
+
+### Organisation des Buckets
+```
+dpj-documents-prod/
+├── client-documents/     # Documents clients
+├── internal-documents/   # Documents internes
+├── archived-documents/   # Documents archivés
+└── temp-uploads/        # Uploads temporaires
+```
+
+### Stratégie de Cache
+- **Cache L1** : Redis (métadonnées + petits fichiers)
+- **Cache L2** : Système de fichiers local (documents fréquents)
+- **Cache L3** : MinIO (stockage principal)
+
+## Conséquences
+
+### Positives
+- **Compatibilité** : API S3 standard, portabilité
+- **Performance** : Accès parallèle, cache multi-niveaux
+- **Coûts** : Réduction significative vs solutions cloud
+- **Contrôle** : Maîtrise complète de l'infrastructure
+- **Sécurité** : Chiffrement et contrôle d'accès granulaire
+- **Scalabilité** : Extension horizontale simple
+
+### Négatives
+- **Opérations** : Gestion infrastructure interne
+- **Expertise** : Compétences requises sur MinIO
+- **Maintenance** : Mises à jour et monitoring à gérer
+
+### Risques
+- Panne simultanée de plusieurs nœuds
+- Corruption de données
+- Saturation de l'espace disque
+
+### Mitigations
+- **Réplication** : Configuration 2+2 minimum
+- **Monitoring** : Surveillance proactive des nœuds
+- **Backup** : Sauvegarde quotidienne vers stockage externe
+- **Alerting** : Alertes sur espace disque et santé des nœuds
+- **Documentation** : Procédures de récupération détaillées
+
+## Configuration
+
+### Cluster MinIO
+```yaml
+# 4 nœuds MinIO en mode distribué
+minio1: minio server http://minio{1...4}/data{1...2}
+minio2: minio server http://minio{1...4}/data{1...2}
+minio3: minio server http://minio{1...4}/data{1...2}
+minio4: minio server http://minio{1...4}/data{1...2}
+```
+
+### Politique de Rétention
+- **Documents actifs** : Stockage haute performance
+- **Documents archivés** : Transition vers stockage froid après 2 ans
+- **Documents temporaires** : Suppression automatique après 7 jours
+
+### Sécurité
+- **Chiffrement** : AES-256 pour tous les objets
+- **Accès** : Authentification par clés d'accès
+- **Réseau** : TLS 1.3 pour toutes les communications
+- **Audit** : Logging de tous les accès aux objets
