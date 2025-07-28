@@ -1,0 +1,684 @@
+# API REST et Contrats de Service
+
+## 1. Architecture API
+
+### 1.1 Principes de Conception API
+
+#### Standards REST
+- **Ressources** : Noms au pluriel (`/dossiers`, `/documents`)
+- **Verbes HTTP** : GET, POST, PUT, PATCH, DELETE
+- **Codes de statut** : Utilisation appropriée des codes HTTP
+- **Versioning** : Via header `Accept: application/vnd.dpj.v1+json`
+- **Pagination** : Liens HATEOAS pour navigation
+
+#### Conventions de Nommage
+- **URLs** : kebab-case (`/dossiers-pieces-justificatives`)
+- **JSON** : camelCase pour les propriétés
+- **Paramètres** : snake_case pour les query parameters
+
+### 1.2 Structure de l'API Gateway
+
+#### Configuration Kong/API Gateway
+```yaml
+services:
+  - name: dossier-service
+    url: http://dossier-service:8080
+    routes:
+      - name: dossiers-route
+        paths: ["/api/v1/dossiers"]
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        
+  - name: document-service
+    url: http://document-service:8080
+    routes:
+      - name: documents-route
+        paths: ["/api/v1/documents"]
+        methods: ["GET", "POST", "PUT", "DELETE"]
+
+plugins:
+  - name: jwt
+    config:
+      secret_is_base64: false
+      key_claim_name: iss
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 1000
+```
+
+## 2. API Dossier Service
+
+### 2.1 Gestion des Dossiers
+
+#### GET /api/v1/dossiers
+**Description** : Récupérer la liste des dossiers
+
+**Paramètres Query** :
+```
+?client_id=string          // Filtrer par client
+&statut=string             // Filtrer par statut
+&type_parcours=string      // Filtrer par type de parcours
+&page=integer              // Numéro de page (défaut: 1)
+&size=integer              // Taille de page (défaut: 20, max: 100)
+&sort=string               // Tri (ex: date_creation:desc)
+&search=string             // Recherche textuelle
+```
+
+**Réponse 200** :
+```json
+{
+  "data": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "numeroDossier": "DOS-2024-001234",
+      "clientId": "CLIENT123",
+      "typeParcours": "OUVERTURE_COMPTE",
+      "statut": "EN_COURS",
+      "etapeCourante": "VERIFICATION_IDENTITE",
+      "dateCreation": "2024-01-15T10:30:00Z",
+      "dateModification": "2024-01-16T14:20:00Z",
+      "collaborateurId": "COLLAB456",
+      "progression": {
+        "etapesCompletes": 2,
+        "etapesTotal": 5,
+        "pourcentage": 40
+      },
+      "documentsManquants": 3,
+      "_links": {
+        "self": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000" },
+        "documents": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000/documents" },
+        "etapes": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000/etapes" }
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "size": 20,
+    "totalElements": 150,
+    "totalPages": 8,
+    "first": true,
+    "last": false
+  },
+  "_links": {
+    "self": { "href": "/api/v1/dossiers?page=1&size=20" },
+    "next": { "href": "/api/v1/dossiers?page=2&size=20" },
+    "last": { "href": "/api/v1/dossiers?page=8&size=20" }
+  }
+}
+```
+
+#### POST /api/v1/dossiers
+**Description** : Créer un nouveau dossier
+
+**Corps de la requête** :
+```json
+{
+  "clientId": "CLIENT123",
+  "typeParcours": "OUVERTURE_COMPTE",
+  "priorite": 1,
+  "dateEcheance": "2024-02-15T23:59:59Z",
+  "commentaireInterne": "Dossier prioritaire - client VIP",
+  "metadata": {
+    "agence": "AG001",
+    "conseiller": "Jean Dupont"
+  }
+}
+```
+
+**Réponse 201** :
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "numeroDossier": "DOS-2024-001235",
+  "clientId": "CLIENT123",
+  "typeParcours": "OUVERTURE_COMPTE",
+  "statut": "BROUILLON",
+  "etapeCourante": null,
+  "dateCreation": "2024-01-16T15:30:00Z",
+  "dateModification": "2024-01-16T15:30:00Z",
+  "createdBy": "COLLAB456",
+  "_links": {
+    "self": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000" }
+  }
+}
+```
+
+#### GET /api/v1/dossiers/{id}
+**Description** : Récupérer un dossier spécifique
+
+**Réponse 200** :
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "numeroDossier": "DOS-2024-001234",
+  "clientId": "CLIENT123",
+  "typeParcours": "OUVERTURE_COMPTE",
+  "statut": "EN_COURS",
+  "etapeCourante": "VERIFICATION_IDENTITE",
+  "dateCreation": "2024-01-15T10:30:00Z",
+  "dateModification": "2024-01-16T14:20:00Z",
+  "collaborateurId": "COLLAB456",
+  "etapes": [
+    {
+      "id": "etape-001",
+      "nomEtape": "Vérification identité",
+      "codeEtape": "VERIFICATION_IDENTITE",
+      "ordreEtape": 1,
+      "statut": "COMPLETE",
+      "dateDebut": "2024-01-15T10:30:00Z",
+      "dateFin": "2024-01-15T16:45:00Z",
+      "documentsObligatoires": [
+        {
+          "typeDocument": "PIECE_IDENTITE",
+          "libelle": "Pièce d'identité",
+          "present": true,
+          "valide": true
+        }
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "id": "doc-001",
+      "nomFichier": "carte_identite.pdf",
+      "typeDocument": "PIECE_IDENTITE",
+      "statut": "VALIDE",
+      "dateDepot": "2024-01-15T11:00:00Z"
+    }
+  ],
+  "_links": {
+    "self": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000" },
+    "documents": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000/documents" }
+  }
+}
+```
+
+#### PUT /api/v1/dossiers/{id}
+**Description** : Mettre à jour un dossier
+
+**Corps de la requête** :
+```json
+{
+  "statut": "VALIDE",
+  "collaborateurId": "COLLAB789",
+  "commentaireInterne": "Dossier validé - tous documents conformes"
+}
+```
+
+#### DELETE /api/v1/dossiers/{id}
+**Description** : Supprimer un dossier (soft delete)
+
+**Réponse 204** : No Content
+
+### 2.2 Gestion des Étapes
+
+#### GET /api/v1/dossiers/{id}/etapes
+**Description** : Récupérer les étapes d'un dossier
+
+**Réponse 200** :
+```json
+{
+  "data": [
+    {
+      "id": "etape-001",
+      "nomEtape": "Vérification identité",
+      "codeEtape": "VERIFICATION_IDENTITE",
+      "ordreEtape": 1,
+      "statut": "COMPLETE",
+      "dateDebut": "2024-01-15T10:30:00Z",
+      "dateFin": "2024-01-15T16:45:00Z",
+      "dureeEstimeeHeures": 4,
+      "documentsObligatoires": [
+        {
+          "typeDocument": "PIECE_IDENTITE",
+          "libelle": "Pièce d'identité",
+          "present": true,
+          "valide": true,
+          "documentId": "doc-001"
+        }
+      ],
+      "documentsOptionnels": [],
+      "progression": {
+        "documentsPresents": 1,
+        "documentsTotal": 1,
+        "pourcentage": 100
+      }
+    }
+  ]
+}
+```
+
+#### POST /api/v1/dossiers/{id}/etapes/{etapeId}/valider
+**Description** : Valider une étape
+
+**Corps de la requête** :
+```json
+{
+  "commentaire": "Tous les documents sont conformes",
+  "documentsValides": ["doc-001", "doc-002"]
+}
+```
+
+## 3. API Document Service
+
+### 3.1 Gestion des Documents
+
+#### GET /api/v1/documents
+**Description** : Récupérer la liste des documents
+
+**Paramètres Query** :
+```
+?dossier_id=uuid           // Filtrer par dossier
+&statut=string             // Filtrer par statut
+&type_document=string      // Filtrer par type
+&deposant_id=string        // Filtrer par déposant
+&date_depot_from=date      // Date de dépôt depuis
+&date_depot_to=date        // Date de dépôt jusqu'à
+&page=integer
+&size=integer
+&sort=string
+```
+
+**Réponse 200** :
+```json
+{
+  "data": [
+    {
+      "id": "doc-001",
+      "dossierId": "123e4567-e89b-12d3-a456-426614174000",
+      "nomFichier": "carte_identite.pdf",
+      "nomOriginal": "Carte d'identité - Jean Dupont.pdf",
+      "typeDocument": "PIECE_IDENTITE",
+      "categorieDocument": "IDENTITE",
+      "mimeType": "application/pdf",
+      "tailleFichier": 2048576,
+      "statut": "VALIDE",
+      "estObligatoire": true,
+      "dateDepot": "2024-01-15T11:00:00Z",
+      "dateValidation": "2024-01-15T16:30:00Z",
+      "deposantId": "CLIENT123",
+      "validateurId": "COLLAB456",
+      "numeroVersion": 1,
+      "tags": ["identite", "officiel"],
+      "_links": {
+        "self": { "href": "/api/v1/documents/doc-001" },
+        "download": { "href": "/api/v1/documents/doc-001/download" },
+        "preview": { "href": "/api/v1/documents/doc-001/preview" },
+        "dossier": { "href": "/api/v1/dossiers/123e4567-e89b-12d3-a456-426614174000" }
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "size": 20,
+    "totalElements": 45,
+    "totalPages": 3
+  }
+}
+```
+
+#### POST /api/v1/documents
+**Description** : Uploader un nouveau document
+
+**Content-Type** : `multipart/form-data`
+
+**Paramètres** :
+```
+file: File                 // Fichier à uploader
+dossier_id: UUID          // ID du dossier
+type_document: String     // Type de document
+est_obligatoire: Boolean  // Document obligatoire
+commentaire: String       // Commentaire optionnel
+tags: String[]            // Tags optionnels
+```
+
+**Réponse 201** :
+```json
+{
+  "id": "doc-002",
+  "dossierId": "123e4567-e89b-12d3-a456-426614174000",
+  "nomFichier": "justificatif_domicile_20240116.pdf",
+  "nomOriginal": "Facture EDF - Janvier 2024.pdf",
+  "typeDocument": "JUSTIFICATIF_DOMICILE",
+  "mimeType": "application/pdf",
+  "tailleFichier": 1536000,
+  "statut": "EN_ATTENTE",
+  "dateDepot": "2024-01-16T15:45:00Z",
+  "deposantId": "CLIENT123",
+  "numeroVersion": 1,
+  "uploadStatus": {
+    "status": "COMPLETED",
+    "virusScanStatus": "PENDING",
+    "processingStatus": "PENDING"
+  },
+  "_links": {
+    "self": { "href": "/api/v1/documents/doc-002" }
+  }
+}
+```
+
+#### GET /api/v1/documents/{id}
+**Description** : Récupérer les détails d'un document
+
+**Réponse 200** :
+```json
+{
+  "id": "doc-001",
+  "dossierId": "123e4567-e89b-12d3-a456-426614174000",
+  "nomFichier": "carte_identite.pdf",
+  "nomOriginal": "Carte d'identité - Jean Dupont.pdf",
+  "typeDocument": "PIECE_IDENTITE",
+  "categorieDocument": "IDENTITE",
+  "mimeType": "application/pdf",
+  "tailleFichier": 2048576,
+  "checksumSha256": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+  "statut": "VALIDE",
+  "estObligatoire": true,
+  "dateDepot": "2024-01-15T11:00:00Z",
+  "dateValidation": "2024-01-15T16:30:00Z",
+  "dateExpiration": "2025-01-15T23:59:59Z",
+  "deposantId": "CLIENT123",
+  "validateurId": "COLLAB456",
+  "commentaireValidation": "Document conforme et lisible",
+  "numeroVersion": 1,
+  "tags": ["identite", "officiel"],
+  "metadata": {
+    "exifData": {},
+    "ocrText": "RÉPUBLIQUE FRANÇAISE...",
+    "classification": "CONFIDENTIEL"
+  },
+  "versions": [
+    {
+      "version": 1,
+      "dateCreation": "2024-01-15T11:00:00Z",
+      "tailleFichier": 2048576,
+      "checksum": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+    }
+  ],
+  "_links": {
+    "self": { "href": "/api/v1/documents/doc-001" },
+    "download": { "href": "/api/v1/documents/doc-001/download" },
+    "preview": { "href": "/api/v1/documents/doc-001/preview" },
+    "versions": { "href": "/api/v1/documents/doc-001/versions" }
+  }
+}
+```
+
+#### PUT /api/v1/documents/{id}
+**Description** : Remplacer un document (nouvelle version)
+
+**Content-Type** : `multipart/form-data`
+
+#### PATCH /api/v1/documents/{id}
+**Description** : Mettre à jour les métadonnées d'un document
+
+**Corps de la requête** :
+```json
+{
+  "tags": ["identite", "officiel", "valide"],
+  "commentaire": "Document mis à jour",
+  "dateExpiration": "2025-12-31T23:59:59Z"
+}
+```
+
+#### DELETE /api/v1/documents/{id}
+**Description** : Supprimer un document
+
+### 3.2 Actions sur les Documents
+
+#### GET /api/v1/documents/{id}/download
+**Description** : Télécharger un document
+
+**Headers de réponse** :
+```
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="carte_identite.pdf"
+Content-Length: 2048576
+X-Document-Checksum: a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3
+```
+
+#### GET /api/v1/documents/{id}/preview
+**Description** : Aperçu d'un document (image/thumbnail)
+
+**Paramètres Query** :
+```
+?width=integer             // Largeur de l'aperçu (défaut: 300)
+&height=integer            // Hauteur de l'aperçu (défaut: 400)
+&page=integer              // Page pour les PDF (défaut: 1)
+```
+
+#### POST /api/v1/documents/{id}/valider
+**Description** : Valider un document
+
+**Corps de la requête** :
+```json
+{
+  "commentaire": "Document conforme aux exigences",
+  "dateExpiration": "2025-01-15T23:59:59Z",
+  "tags": ["valide", "conforme"]
+}
+```
+
+**Réponse 200** :
+```json
+{
+  "id": "doc-001",
+  "statut": "VALIDE",
+  "dateValidation": "2024-01-16T16:00:00Z",
+  "validateurId": "COLLAB456",
+  "commentaireValidation": "Document conforme aux exigences"
+}
+```
+
+#### POST /api/v1/documents/{id}/rejeter
+**Description** : Rejeter un document
+
+**Corps de la requête** :
+```json
+{
+  "motifRejet": "Document illisible - qualité insuffisante",
+  "commentaire": "Merci de fournir un scan de meilleure qualité"
+}
+```
+
+## 4. API Storage Service
+
+### 4.1 Gestion du Stockage
+
+#### POST /api/v1/storage/upload
+**Description** : Upload direct de fichier (pour gros fichiers)
+
+**Content-Type** : `multipart/form-data`
+
+**Réponse 201** :
+```json
+{
+  "uploadId": "upload-123",
+  "cheminStockage": "/documents/2024/01/dossier-123/doc-456.pdf",
+  "checksum": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+  "tailleFichier": 2048576,
+  "mimeType": "application/pdf",
+  "virusScanStatus": "PENDING"
+}
+```
+
+#### GET /api/v1/storage/files/{path}
+**Description** : Récupérer un fichier par son chemin
+
+#### DELETE /api/v1/storage/files/{path}
+**Description** : Supprimer un fichier du stockage
+
+## 5. API GED Integration Service
+
+### 5.1 Archivage GED
+
+#### POST /api/v1/ged/archive
+**Description** : Archiver des documents en GED
+
+**Corps de la requête** :
+```json
+{
+  "dossierId": "123e4567-e89b-12d3-a456-426614174000",
+  "documentIds": ["doc-001", "doc-002"],
+  "metadataGed": {
+    "classification": "DOSSIER_CLIENT",
+    "retention": "10_YEARS",
+    "confidentialite": "INTERNE"
+  }
+}
+```
+
+**Réponse 202** :
+```json
+{
+  "archiveJobId": "job-789",
+  "statut": "EN_COURS",
+  "documentsAArchiver": 2,
+  "estimatedCompletionTime": "2024-01-16T17:30:00Z",
+  "_links": {
+    "status": { "href": "/api/v1/ged/archive/job-789/status" }
+  }
+}
+```
+
+#### GET /api/v1/ged/archive/{jobId}/status
+**Description** : Statut d'un job d'archivage
+
+**Réponse 200** :
+```json
+{
+  "jobId": "job-789",
+  "statut": "COMPLETE",
+  "progression": {
+    "documentsTraites": 2,
+    "documentsTotal": 2,
+    "pourcentage": 100
+  },
+  "resultats": [
+    {
+      "documentId": "doc-001",
+      "statut": "ARCHIVE",
+      "gedId": "GED-2024-001234",
+      "dateArchivage": "2024-01-16T17:15:00Z"
+    },
+    {
+      "documentId": "doc-002",
+      "statut": "ARCHIVE",
+      "gedId": "GED-2024-001235",
+      "dateArchivage": "2024-01-16T17:16:00Z"
+    }
+  ]
+}
+```
+
+## 6. API Auth Service
+
+### 6.1 Authentification
+
+#### POST /api/v1/auth/login
+**Description** : Connexion utilisateur
+
+**Corps de la requête** :
+```json
+{
+  "email": "jean.dupont@banque.fr",
+  "password": "motdepasse123",
+  "remember": true
+}
+```
+
+**Réponse 200** :
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "user": {
+    "id": "USER123",
+    "email": "jean.dupont@banque.fr",
+    "nom": "Dupont",
+    "prenom": "Jean",
+    "role": "COLLABORATEUR",
+    "permissions": ["read:dossier", "write:document", "validate:document"]
+  }
+}
+```
+
+#### POST /api/v1/auth/refresh
+**Description** : Renouveler le token
+
+#### POST /api/v1/auth/logout
+**Description** : Déconnexion
+
+## 7. Gestion des Erreurs
+
+### 7.1 Format Standard des Erreurs
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Les données fournies ne sont pas valides",
+    "details": [
+      {
+        "field": "tailleFichier",
+        "message": "La taille du fichier dépasse la limite autorisée (10MB)",
+        "rejectedValue": 15728640
+      }
+    ],
+    "timestamp": "2024-01-16T16:30:00Z",
+    "path": "/api/v1/documents",
+    "requestId": "req-123456"
+  }
+}
+```
+
+### 7.2 Codes d'Erreur Métier
+
+```json
+{
+  "DOSSIER_NOT_FOUND": "Le dossier demandé n'existe pas",
+  "DOCUMENT_NOT_FOUND": "Le document demandé n'existe pas",
+  "INVALID_FILE_FORMAT": "Format de fichier non autorisé",
+  "FILE_TOO_LARGE": "Fichier trop volumineux",
+  "VIRUS_DETECTED": "Virus détecté dans le fichier",
+  "UNAUTHORIZED_ACCESS": "Accès non autorisé à cette ressource",
+  "DOSSIER_ALREADY_ARCHIVED": "Le dossier est déjà archivé",
+  "DOCUMENT_VALIDATION_FAILED": "La validation du document a échoué",
+  "GED_INTEGRATION_ERROR": "Erreur lors de l'intégration avec la GED"
+}
+```
+
+## 8. Versioning et Évolution API
+
+### 8.1 Stratégie de Versioning
+
+#### Header-based Versioning
+```http
+Accept: application/vnd.dpj.v1+json
+Accept: application/vnd.dpj.v2+json
+```
+
+#### Rétrocompatibilité
+- Maintien de la version N-1 pendant 12 mois
+- Dépréciation progressive avec warnings
+- Migration assistée pour les clients
+
+### 8.2 Documentation API
+
+#### OpenAPI 3.0 Specification
+```yaml
+openapi: 3.0.0
+info:
+  title: DPJ API
+  version: 1.0.0
+  description: API pour la gestion des Dossiers de Pièces Justificatives
+servers:
+  - url: https://api.dpj.banque.fr/v1
+    description: Production
+  - url: https://api-staging.dpj.banque.fr/v1
+    description: Staging
+```
+
+Cette architecture API REST robuste permet de gérer efficacement les interactions avec le système tout en maintenant la performance et la sécurité requises pour 500+ utilisateurs simultanés.
